@@ -12,6 +12,13 @@ import {
 } from "@/lib/storage";
 import { getTopicById } from "@/lib/topics";
 import { speak, stopSpeaking, useSpeechInput, useSpeechSupport } from "@/lib/speech";
+import {
+  loadNaturalVoice,
+  speakNatural,
+  stopNatural,
+  useNaturalVoiceStatus,
+  useNaturalVoiceSupport,
+} from "@/lib/kokoro";
 import type { Message, ConversationSession, UserProfile, VocabItem } from "@/lib/types";
 
 export default function ConversationPageWrapper() {
@@ -43,13 +50,50 @@ function ConversationPage() {
 
   const support = useSpeechSupport();
   const [voiceOn, setVoiceOn] = useState(true);
+  const naturalSupported = useNaturalVoiceSupport();
+  const naturalStatus = useNaturalVoiceStatus();
+  const [natural, setNatural] = useState(false);
+
+  // Cam's voice. Uses the natural (Kokoro) voice once it is downloaded, otherwise the browser voice.
+  function say(text: string) {
+    stopSpeaking();
+    if (natural && naturalStatus.state === "ready") {
+      speakNatural(text).catch(() => {
+        setNatural(false);
+        speak(text);
+      });
+    } else {
+      stopNatural();
+      speak(text);
+    }
+  }
+
+  function silence() {
+    stopSpeaking();
+    stopNatural();
+  }
+
+  function toggleNatural() {
+    if (natural) {
+      setNatural(false);
+      return;
+    }
+    if (
+      naturalStatus.state === "idle" &&
+      !window.confirm("Natural voice downloads about 330 MB once (use Wi-Fi if you can), then works offline. Download now?")
+    ) {
+      return;
+    }
+    setNatural(true);
+    loadNaturalVoice().catch(() => setNatural(false));
+  }
   // Live transcript fills the input box; the finished sentence is sent automatically.
   const mic = useSpeechInput((text, final) => {
     if (final) sendMessage(text);
     else setInput(text);
   });
 
-  useEffect(() => () => stopSpeaking(), []);
+  useEffect(() => () => { stopSpeaking(); stopNatural(); }, []);
 
   useEffect(() => {
     if (!topic) { router.push("/topics"); return; }
@@ -84,7 +128,7 @@ function ConversationPage() {
       timestamp: new Date().toISOString(),
     };
     setMessages([opener]);
-    if (voiceOn) speak(opener.content);
+    if (voiceOn) speak(opener.content); // model is not loaded yet at this point
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topicId]);
 
@@ -143,7 +187,7 @@ function ConversationPage() {
 
       const finalMessages = [...newMessages, assistantMsg];
       setMessages(finalMessages);
-      if (voiceOn) speak(data.message);
+      if (voiceOn) say(data.message);
 
       if (data.correction) setCorrectionCount((c) => c + 1);
       if (newVocab.length > 0) {
@@ -167,7 +211,7 @@ function ConversationPage() {
 
   function endSession() {
     if (!session || !profile) return;
-    stopSpeaking();
+    silence();
     mic.stop();
 
     const updatedSession: ConversationSession = {
@@ -190,13 +234,13 @@ function ConversationPage() {
   const userMessageCount = messages.filter((m) => m.role === "user").length;
 
   return (
-    <div className="flex flex-col h-screen" style={{ background: "var(--bg)" }}>
+    <div className="flex flex-col h-dvh" style={{ background: "var(--bg)" }}>
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-3 border-b shrink-0"
         style={{ background: "var(--surface)", borderColor: "var(--border)" }}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => router.push("/topics")}
             className="text-lg w-8 h-8 flex items-center justify-center rounded-xl transition-opacity hover:opacity-60"
@@ -205,18 +249,18 @@ function ConversationPage() {
             ←
           </button>
           <span className="text-xl">{topic.emoji}</span>
-          <div>
-            <p className="font-semibold text-sm">{topic.name}</p>
-            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-              Cam · AI conversation partner
+          <div className="min-w-0">
+            <p className="font-semibold text-sm truncate">{topic.name}</p>
+            <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
+              Cam<span className="hidden sm:inline"> · AI conversation partner</span>
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {support.output && (
             <button
               onClick={() => {
-                if (voiceOn) stopSpeaking();
+                if (voiceOn) silence();
                 setVoiceOn(!voiceOn);
               }}
               title={voiceOn ? "Mute Cam's voice" : "Turn on Cam's voice"}
@@ -231,6 +275,26 @@ function ConversationPage() {
               {voiceOn ? "🔊" : "🔇"}
             </button>
           )}
+          {support.output && naturalSupported && (
+            <button
+              onClick={toggleNatural}
+              title="Natural voice (Kokoro): more human-sounding, runs in your browser. One-time ~330 MB download."
+              aria-label="Natural voice"
+              aria-pressed={natural}
+              className="text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-70"
+              style={{
+                background: natural ? "var(--accent-light)" : "var(--border)",
+                color: natural ? "var(--accent)" : "var(--text-muted)",
+              }}
+            >
+              ✨{" "}
+              {natural && naturalStatus.state === "loading" ? (
+                `${naturalStatus.progress}%`
+              ) : (
+                <span className="hidden sm:inline">Natural</span>
+              )}
+            </button>
+          )}
           <button
             onClick={() => setShowPanel(!showPanel)}
             className="text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-70"
@@ -239,7 +303,12 @@ function ConversationPage() {
               color: showPanel ? "var(--accent)" : "var(--text-muted)",
             }}
           >
-            📋 {sessionVocab.length > 0 ? sessionVocab.length + " vocab" : "Notes"}
+            📋{" "}
+            {sessionVocab.length > 0 ? (
+              sessionVocab.length + " vocab"
+            ) : (
+              <span className="hidden sm:inline">Notes</span>
+            )}
           </button>
           {!ended && userMessageCount >= 2 && (
             <button
@@ -261,7 +330,7 @@ function ConversationPage() {
               <MessageBubble
                 key={msg.id}
                 message={msg}
-                onSpeak={support.output ? () => speak(msg.content) : undefined}
+                onSpeak={support.output ? () => say(msg.content) : undefined}
               />
             ))}
             {loading && <TypingIndicator />}
@@ -311,7 +380,7 @@ function ConversationPage() {
                       if (mic.listening) {
                         mic.stop();
                       } else {
-                        stopSpeaking();
+                        silence();
                         mic.start();
                       }
                     }}
