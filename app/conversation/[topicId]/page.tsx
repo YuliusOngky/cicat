@@ -12,6 +12,13 @@ import {
 } from "@/lib/storage";
 import { getTopicById } from "@/lib/topics";
 import { speak, stopSpeaking, useSpeechInput, useSpeechSupport } from "@/lib/speech";
+import {
+  loadNaturalVoice,
+  speakNatural,
+  stopNatural,
+  useNaturalVoiceStatus,
+  useNaturalVoiceSupport,
+} from "@/lib/kokoro";
 import type { Message, ConversationSession, UserProfile, VocabItem } from "@/lib/types";
 
 export default function ConversationPageWrapper() {
@@ -43,13 +50,50 @@ function ConversationPage() {
 
   const support = useSpeechSupport();
   const [voiceOn, setVoiceOn] = useState(true);
+  const naturalSupported = useNaturalVoiceSupport();
+  const naturalStatus = useNaturalVoiceStatus();
+  const [natural, setNatural] = useState(false);
+
+  // Cam's voice. Uses the natural (Kokoro) voice once it is downloaded, otherwise the browser voice.
+  function say(text: string) {
+    stopSpeaking();
+    if (natural && naturalStatus.state === "ready") {
+      speakNatural(text).catch(() => {
+        setNatural(false);
+        speak(text);
+      });
+    } else {
+      stopNatural();
+      speak(text);
+    }
+  }
+
+  function silence() {
+    stopSpeaking();
+    stopNatural();
+  }
+
+  function toggleNatural() {
+    if (natural) {
+      setNatural(false);
+      return;
+    }
+    if (
+      naturalStatus.state === "idle" &&
+      !window.confirm("Natural voice downloads about 330 MB once, then works offline. Download now?")
+    ) {
+      return;
+    }
+    setNatural(true);
+    loadNaturalVoice().catch(() => setNatural(false));
+  }
   // Live transcript fills the input box; the finished sentence is sent automatically.
   const mic = useSpeechInput((text, final) => {
     if (final) sendMessage(text);
     else setInput(text);
   });
 
-  useEffect(() => () => stopSpeaking(), []);
+  useEffect(() => () => { stopSpeaking(); stopNatural(); }, []);
 
   useEffect(() => {
     if (!topic) { router.push("/topics"); return; }
@@ -84,7 +128,7 @@ function ConversationPage() {
       timestamp: new Date().toISOString(),
     };
     setMessages([opener]);
-    if (voiceOn) speak(opener.content);
+    if (voiceOn) speak(opener.content); // model is not loaded yet at this point
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topicId]);
 
@@ -143,7 +187,7 @@ function ConversationPage() {
 
       const finalMessages = [...newMessages, assistantMsg];
       setMessages(finalMessages);
-      if (voiceOn) speak(data.message);
+      if (voiceOn) say(data.message);
 
       if (data.correction) setCorrectionCount((c) => c + 1);
       if (newVocab.length > 0) {
@@ -167,7 +211,7 @@ function ConversationPage() {
 
   function endSession() {
     if (!session || !profile) return;
-    stopSpeaking();
+    silence();
     mic.stop();
 
     const updatedSession: ConversationSession = {
@@ -216,7 +260,7 @@ function ConversationPage() {
           {support.output && (
             <button
               onClick={() => {
-                if (voiceOn) stopSpeaking();
+                if (voiceOn) silence();
                 setVoiceOn(!voiceOn);
               }}
               title={voiceOn ? "Mute Cam's voice" : "Turn on Cam's voice"}
@@ -229,6 +273,24 @@ function ConversationPage() {
               }}
             >
               {voiceOn ? "🔊" : "🔇"}
+            </button>
+          )}
+          {support.output && naturalSupported && (
+            <button
+              onClick={toggleNatural}
+              title="Natural voice (Kokoro): more human-sounding, runs in your browser. One-time ~330 MB download."
+              aria-label="Natural voice"
+              aria-pressed={natural}
+              className="text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-70"
+              style={{
+                background: natural ? "var(--accent-light)" : "var(--border)",
+                color: natural ? "var(--accent)" : "var(--text-muted)",
+              }}
+            >
+              ✨{" "}
+              {natural && naturalStatus.state === "loading"
+                ? `${naturalStatus.progress}%`
+                : "Natural"}
             </button>
           )}
           <button
@@ -261,7 +323,7 @@ function ConversationPage() {
               <MessageBubble
                 key={msg.id}
                 message={msg}
-                onSpeak={support.output ? () => speak(msg.content) : undefined}
+                onSpeak={support.output ? () => say(msg.content) : undefined}
               />
             ))}
             {loading && <TypingIndicator />}
@@ -311,7 +373,7 @@ function ConversationPage() {
                       if (mic.listening) {
                         mic.stop();
                       } else {
-                        stopSpeaking();
+                        silence();
                         mic.start();
                       }
                     }}
