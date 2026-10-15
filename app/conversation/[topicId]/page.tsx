@@ -11,6 +11,7 @@ import {
   updateStreak,
 } from "@/lib/storage";
 import { getTopicById } from "@/lib/topics";
+import { speak, stopSpeaking, useSpeechInput, useSpeechSupport } from "@/lib/speech";
 import type { Message, ConversationSession, UserProfile, VocabItem } from "@/lib/types";
 
 export default function ConversationPageWrapper() {
@@ -39,6 +40,16 @@ function ConversationPage() {
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const support = useSpeechSupport();
+  const [voiceOn, setVoiceOn] = useState(true);
+  // Live transcript fills the input box; the finished sentence is sent automatically.
+  const mic = useSpeechInput((text, final) => {
+    if (final) sendMessage(text);
+    else setInput(text);
+  });
+
+  useEffect(() => () => stopSpeaking(), []);
 
   useEffect(() => {
     if (!topic) { router.push("/topics"); return; }
@@ -73,6 +84,7 @@ function ConversationPage() {
       timestamp: new Date().toISOString(),
     };
     setMessages([opener]);
+    if (voiceOn) speak(opener.content);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topicId]);
 
@@ -80,13 +92,14 @@ function ConversationPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  async function sendMessage() {
-    if (!input.trim() || loading || ended || !session || !profile) return;
+  async function sendMessage(textOverride?: string) {
+    const text = (textOverride ?? input).trim();
+    if (!text || loading || ended || !session || !profile) return;
 
     const userMsg: Message = {
       id: generateId(),
       role: "user",
-      content: input.trim(),
+      content: text,
       timestamp: new Date().toISOString(),
     };
 
@@ -130,6 +143,7 @@ function ConversationPage() {
 
       const finalMessages = [...newMessages, assistantMsg];
       setMessages(finalMessages);
+      if (voiceOn) speak(data.message);
 
       if (data.correction) setCorrectionCount((c) => c + 1);
       if (newVocab.length > 0) {
@@ -153,6 +167,8 @@ function ConversationPage() {
 
   function endSession() {
     if (!session || !profile) return;
+    stopSpeaking();
+    mic.stop();
 
     const updatedSession: ConversationSession = {
       ...session,
@@ -197,6 +213,24 @@ function ConversationPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {support.output && (
+            <button
+              onClick={() => {
+                if (voiceOn) stopSpeaking();
+                setVoiceOn(!voiceOn);
+              }}
+              title={voiceOn ? "Mute Cam's voice" : "Turn on Cam's voice"}
+              aria-label={voiceOn ? "Mute Cam's voice" : "Turn on Cam's voice"}
+              aria-pressed={voiceOn}
+              className="text-sm px-3 py-1.5 rounded-lg transition-opacity hover:opacity-70"
+              style={{
+                background: voiceOn ? "var(--accent-light)" : "var(--border)",
+                color: voiceOn ? "var(--accent)" : "var(--text-muted)",
+              }}
+            >
+              {voiceOn ? "🔊" : "🔇"}
+            </button>
+          )}
           <button
             onClick={() => setShowPanel(!showPanel)}
             className="text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-70"
@@ -224,7 +258,11 @@ function ConversationPage() {
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-hide">
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                onSpeak={support.output ? () => speak(msg.content) : undefined}
+              />
             ))}
             {loading && <TypingIndicator />}
             <div ref={bottomRef} />
@@ -267,13 +305,38 @@ function ConversationPage() {
               style={{ borderColor: "var(--border)" }}
             >
               <div className="flex items-end gap-2">
+                {support.input && (
+                  <button
+                    onClick={() => {
+                      if (mic.listening) {
+                        mic.stop();
+                      } else {
+                        stopSpeaking();
+                        mic.start();
+                      }
+                    }}
+                    disabled={loading || ended}
+                    title={mic.listening ? "Stop listening" : "Speak your reply"}
+                    aria-label={mic.listening ? "Stop listening" : "Speak your reply"}
+                    aria-pressed={mic.listening}
+                    className={`w-11 h-11 rounded-2xl flex items-center justify-center text-lg transition-opacity disabled:opacity-40 shrink-0 ${
+                      mic.listening ? "animate-pulse text-white" : ""
+                    }`}
+                    style={{
+                      background: mic.listening ? "#ef4444" : "var(--accent-light)",
+                      color: mic.listening ? "#fff" : "var(--accent)",
+                    }}
+                  >
+                    🎤
+                  </button>
+                )}
                 <input
                   ref={inputRef}
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
-                  placeholder="Type your reply..."
+                  placeholder={mic.listening ? "Listening… speak now" : support.input ? "Tap 🎤 to speak, or type…" : "Type your reply..."}
                   className="flex-1 px-4 py-3 rounded-2xl border outline-none text-sm resize-none"
                   style={{
                     background: "var(--surface)",
@@ -283,7 +346,7 @@ function ConversationPage() {
                   disabled={loading || ended}
                 />
                 <button
-                  onClick={sendMessage}
+                  onClick={() => sendMessage()}
                   disabled={!input.trim() || loading || ended}
                   className="w-11 h-11 rounded-2xl flex items-center justify-center text-white font-bold transition-opacity disabled:opacity-40 shrink-0"
                   style={{ background: "var(--accent)" }}
@@ -291,6 +354,16 @@ function ConversationPage() {
                   ↑
                 </button>
               </div>
+              {mic.error && (
+                <p role="alert" className="text-center text-xs mt-2 text-red-600 dark:text-red-400">
+                  {mic.error}
+                </p>
+              )}
+              {!support.input && (
+                <p className="text-center text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+                  Voice input isn&apos;t supported in this browser. Try Chrome, Edge or Safari.
+                </p>
+              )}
               <p className="text-center text-xs mt-2" style={{ color: "var(--text-muted)" }}>
                 {userMessageCount < 2
                   ? `Send ${2 - userMessageCount} more message${2 - userMessageCount !== 1 ? "s" : ""} to unlock End Session`
@@ -395,7 +468,7 @@ function ConversationPage() {
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({ message, onSpeak }: { message: Message; onSpeak?: () => void }) {
   const isUser = message.role === "user";
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"} gap-2`}>
@@ -418,6 +491,18 @@ function MessageBubble({ message }: { message: Message }) {
         >
           {message.content}
         </div>
+
+        {!isUser && onSpeak && (
+          <button
+            onClick={onSpeak}
+            aria-label="Play Cam's message"
+            title="Play again"
+            className="text-xs px-2 py-1 rounded-lg transition-opacity hover:opacity-70"
+            style={{ background: "var(--border)", color: "var(--text-muted)" }}
+          >
+            🔊 Play
+          </button>
+        )}
 
         {message.correction && (
           <div
