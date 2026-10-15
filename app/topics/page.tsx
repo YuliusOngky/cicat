@@ -17,6 +17,8 @@ export default function TopicsPage() {
     const profiles = getProfiles();
     const p = profiles.find((x) => x.id === id);
     if (!p) { router.push("/"); return; }
+    // Hydrating from localStorage on mount is intentional.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setProfile(p);
 
     const sessions = getSessionsByUser(id);

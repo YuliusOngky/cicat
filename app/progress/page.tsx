@@ -23,6 +23,8 @@ export default function ProgressPage() {
     if (!id) { router.push("/"); return; }
     const p = getProfiles().find((x) => x.id === id);
     if (!p) { router.push("/"); return; }
+    // Hydrating from localStorage on mount is intentional.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setProfile(p);
     setSessions(getSessionsByUser(id));
     setVocab(getAllVocabByUser(id));

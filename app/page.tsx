@@ -22,6 +22,8 @@ export default function HomePage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
+    // Hydrating from localStorage on mount is intentional.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setProfiles(getProfiles());
   }, []);
 

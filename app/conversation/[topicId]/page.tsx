@@ -47,6 +47,8 @@ function ConversationPage() {
     const p = getProfiles().find((x) => x.id === id);
     if (!p) { router.push("/"); return; }
 
+    // Hydrating from localStorage on mount is intentional.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setProfile(p);
 
     // Create session
@@ -368,10 +370,10 @@ function ConversationPage() {
                           style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
                         >
                           <p className="line-through mb-1" style={{ color: "var(--text-muted)" }}>
-                            "{m.correction!.original}"
+                            &ldquo;{m.correction!.original}&rdquo;
                           </p>
                           <p className="font-medium text-green-600 dark:text-green-400 mb-1">
-                            "{m.correction!.corrected}"
+                            &ldquo;{m.correction!.corrected}&rdquo;
                           </p>
                           <p style={{ color: "var(--text-muted)" }}>{m.correction!.explanation}</p>
                         </div>
@@ -431,10 +433,10 @@ function MessageBubble({ message }: { message: Message }) {
               💡 Quick tip
             </p>
             <p style={{ color: "var(--text-muted)" }}>
-              <span className="line-through">"{message.correction.original}"</span>
+              <span className="line-through">&ldquo;{message.correction.original}&rdquo;</span>
               {" → "}
               <span className="font-medium" style={{ color: "var(--text)" }}>
-                "{message.correction.corrected}"
+                &ldquo;{message.correction.corrected}&rdquo;
               </span>
             </p>
             <p className="mt-0.5" style={{ color: "var(--text-muted)" }}>
