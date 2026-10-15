@@ -80,7 +80,7 @@ function ConversationPage() {
     }
     if (
       naturalStatus.state === "idle" &&
-      !window.confirm("Natural voice downloads about 330 MB once, then works offline. Download now?")
+      !window.confirm("Natural voice downloads about 330 MB once (use Wi-Fi if you can), then works offline. Download now?")
     ) {
       return;
     }
@@ -240,7 +240,7 @@ function ConversationPage() {
         className="flex items-center justify-between px-4 py-3 border-b shrink-0"
         style={{ background: "var(--surface)", borderColor: "var(--border)" }}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => router.push("/topics")}
             className="text-lg w-8 h-8 flex items-center justify-center rounded-xl transition-opacity hover:opacity-60"
@@ -249,14 +249,14 @@ function ConversationPage() {
             ←
           </button>
           <span className="text-xl">{topic.emoji}</span>
-          <div>
-            <p className="font-semibold text-sm">{topic.name}</p>
-            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-              Cam · AI conversation partner
+          <div className="min-w-0">
+            <p className="font-semibold text-sm truncate">{topic.name}</p>
+            <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
+              Cam<span className="hidden sm:inline"> · AI conversation partner</span>
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {support.output && (
             <button
               onClick={() => {
@@ -288,9 +288,11 @@ function ConversationPage() {
               }}
             >
               ✨{" "}
-              {natural && naturalStatus.state === "loading"
-                ? `${naturalStatus.progress}%`
-                : "Natural"}
+              {natural && naturalStatus.state === "loading" ? (
+                `${naturalStatus.progress}%`
+              ) : (
+                <span className="hidden sm:inline">Natural</span>
+              )}
             </button>
           )}
           <button
@@ -301,7 +303,12 @@ function ConversationPage() {
               color: showPanel ? "var(--accent)" : "var(--text-muted)",
             }}
           >
-            📋 {sessionVocab.length > 0 ? sessionVocab.length + " vocab" : "Notes"}
+            📋{" "}
+            {sessionVocab.length > 0 ? (
+              sessionVocab.length + " vocab"
+            ) : (
+              <span className="hidden sm:inline">Notes</span>
+            )}
           </button>
           {!ended && userMessageCount >= 2 && (
             <button
