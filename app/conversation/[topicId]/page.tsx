@@ -234,7 +234,7 @@ function ConversationPage() {
   const userMessageCount = messages.filter((m) => m.role === "user").length;
 
   return (
-    <div className="flex flex-col h-screen" style={{ background: "var(--bg)" }}>
+    <div className="flex flex-col h-dvh" style={{ background: "var(--bg)" }}>
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-3 border-b shrink-0"
